@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {blankRecord,recordSchema,economics,csvCell,gaps} from '../lib/domain.ts';
+const costs={price:39,purchase:12,packaging:2,shipping:4,feePercent:0,acquisition:10,aftersale:3};
+test('成本正确，贡献利润不等于净利润',()=>{const r=economics(costs);assert.equal(r.profit,8);assert.equal(r.breakEven,18);assert.equal(r.total,31)});
+test('未知成本不当作零',()=>{assert.equal(economics({...costs,shipping:null}).profit,null);assert.equal(economics({...costs,shipping:null}).complete,false)});
+test('零售价不会出现 Infinity',()=>{const r=economics({...costs,price:0});assert.equal(r.margin,null);assert.equal(r.profit,-31)});
+test('平台费用按分四舍五入，负利润可见',()=>{const r=economics({...costs,price:10.01,feePercent:3});assert.equal(r.fee,.30);assert.equal(r.profit,-21.29)});
+test('拒绝负成本与超范围费率',()=>{const r=blankRecord('product');assert.equal(recordSchema.safeParse({...r,costs:{...costs,purchase:-1}}).success,false);assert.equal(recordSchema.safeParse({...r,costs:{...costs,feePercent:101}}).success,false)});
+test('事实必须具有来源和日期',()=>{const r=blankRecord('clue');assert.equal(recordSchema.safeParse({...r,evidence:'事实'}).success,false);assert.equal(recordSchema.safeParse({...r,evidence:'事实',sourceNote:'访谈匿名记录 A1',collectedAt:'2026-10-03'}).success,true)});
+test('拒绝脚本链接与不存在的日期',()=>{assert.equal(recordSchema.safeParse({...blankRecord('clue'),sourceUrl:'javascript:alert(1)'}).success,false);assert.equal(recordSchema.safeParse({...blankRecord('clue'),collectedAt:'2026-02-30'}).success,false)});
+test('状态受记录类型约束',()=>{assert.equal(recordSchema.safeParse({...blankRecord('clue'),status:'测试中'}).success,false)});
+test('验证完成必须填实际结果',()=>{assert.equal(recordSchema.safeParse({...blankRecord('experiment'),status:'已完成'}).success,false)});
+test('商品决策必须保留依据',()=>{assert.equal(recordSchema.safeParse({...blankRecord('product'),status:'可推进'}).success,false)});
+test('已验证 Wiki 需要正文与可追溯来源',()=>{const r={...blankRecord('wiki'),status:'已验证',body:'结论'};assert.equal(recordSchema.safeParse(r).success,false);assert.equal(recordSchema.safeParse({...r,sourceNote:'实验记录编号 A'}).success,true)});
+test('CSV 公式与引号安全编码',()=>{assert.equal(csvCell('=SUM(A1)'),`"'=SUM(A1)"`);assert.equal(csvCell('a"b'),`"a""b"`);assert.equal(csvCell('普通文字'),'"普通文字"')});
+test('完整性检查不输出市场预测',()=>{assert.ok(gaps(blankRecord('product')).includes('补齐成本测算'))});
